@@ -1,15 +1,35 @@
-**Plax is on the backburner and is provided as-is. I won't be adding bug fixes or future improvements at this time. Plax is old enough that there are [better options available](https://www.google.com/webhp?sourceid=chrome-instant&ion=1&espv=2&ie=UTF-8#q=jquery%20parallax%20plugin) so go forth an parallax!**
-
-
 # Plax
 
 Plax is a [jQuery](http://jquery.com) plugin that makes it suuuuuper easy to parallax elements in your site based on mouse position. You can see it implemented in many places throughout GitHub, including the [404 page](http://www.github.com/404), the [500 page](http://www.github.com/500), and the [about page](http://www.github.com/about). I've also used a modified version to [parallax a URL](http://projects.cameronmcefee.com/parallax-url).
 
+> **Maintenance status:** Plax was originally written by Cameron McEfee and is now maintained by [PreCog Security](https://github.com/PreCogSecurity). The 1.5.0 release hardens the plugin (no implicit globals, safer event handling, validated input), adds a test suite and CI, and keeps the original zero-dependency, single-file design. Bug reports and pull requests are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Dependencies
 
-**[jQuery](http://jquery.com/)**
+**[jQuery](http://jquery.com/)** (1.8 or newer) — loaded by your page before Plax. Plax itself has no other runtime dependencies.
 
+## Install
+
+Plax is a single file, `js/plax.js`, that you can drop into any page:
+
+```html
+<script type="text/javascript" src="/js/jquery.min.js"></script>
+<script type="text/javascript" src="/js/plax.js"></script>
+```
+
+It is also published on npm (as a browser asset, not a module):
+
+```sh
+npm install plax
+```
+
+For development, clone the repository and install the dev tooling:
+
+```sh
+git clone https://github.com/PreCogSecurity/plax.git
+cd plax
+npm install
+```
 
 ## Usage
 
@@ -66,7 +86,6 @@ $('#my-btn').click(function(){
 })
 ```
 
-
 ## Documentation
 
 ### plaxify()
@@ -106,7 +125,6 @@ Disable parallaxing.
 
 `clearLayers` &mdash; **Boolean:** *(optional)* clears all previously defined layers when disabling.
 
-
 ## Best Practices
 
 - Items should be absolutely positioned, with `top:` and `left:` values specified.
@@ -116,7 +134,6 @@ Disable parallaxing.
 - For more realistic parallaxing (see "how to do the math" below), pick an "anchor object". Base your ranges for each object on the anchor object's range, getting exponentially larger the farther it is supposed to be from the anchor object. For example, an object close to your anchor object might have 2x its range, while an object really far away may have 5x as big a range.
 
 - Objects that appear behind the anchor object should have `invert` set to true.
-
 
 ## How To Fake It
 
@@ -138,3 +155,35 @@ Picture another driving scenario. You're the passenger in a car driving past a b
 __The lesson__
 
 The principals from the previous scenario are still present in this situation, only the anchor has moved to the back layer (the mountains). Since the mountains are far off in the distance and barely moving, they get a range of 5&ndash;10 pixels. Each layer as it comes forward should have a greater range than the layer before it. The barn would probably have 20&ndash;30 pixels of range and the grass near the road would probably have 100 pixels of range.
+
+## Testing
+
+```sh
+npm test
+```
+
+The suite (Jest + jsdom) exercises `plaxify`, `enable`/`disable`, data-attribute parsing, background layers, and state transitions. It runs in CI on every push and pull request.
+
+```sh
+npm run lint
+```
+
+ESLint (`eslint:recommended`) enforces style consistency across `js/` and `test/`.
+
+## Architecture
+
+Plax is intentionally a single, self-contained IIFE (`js/plax.js`) with no build step — it is a drop-in browser script. Internally it has three parts:
+
+- **`$.fn.plaxify`** — reads layer configuration from data attributes and/or params, snapshots each element's origin position, and registers it in a private `layers` array.
+- **`plaxifier`** — the render loop, throttled to 25fps. It converts mouse or device-orientation input into a normalized ratio and applies it to every registered layer via `translate3d` (or `top`/`left` for background layers).
+- **`$.plax.enable` / `$.plax.disable`** — bind/unbind the input handlers and manage layer state (restore positions, clear layers).
+
+All state is private to the closure; the only globals introduced are `$.fn.plaxify` and `$.plax`. See [CONTRIBUTING.md](CONTRIBUTING.md) before changing this structure.
+
+## Security
+
+Plax treats DOM data attributes and user-supplied options as untrusted input. It never evaluates strings, never touches `innerHTML`, and writes only CSS properties. Layer configuration is iterated defensively (own properties only), and invalid background positions are reported via `console.warn` instead of failing silently. If you find a security issue, report it privately to the maintainers — see [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## License
+
+MIT — see [LICENSE](LICENSE). Copyright (c) 2011 Cameron McEfee.

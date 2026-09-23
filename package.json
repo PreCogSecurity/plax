@@ -1,14 +1,40 @@
 {
-    "name": "plax"
-		, "description": "javascript parallaxing"
-		, "version": "1.5.0"
-		, "homepage": "http://www.cameronmcefee.com/plax"
-		, "author": "Cameron McEfee"
-		, "main": "./js/plax.js"
-		, "keywords": ["ender", "parallax"]
-		, "ender": "noop"
-		, "repository": {
-        "type": "git"
-				, "url": "https://github.com/cameronmcefee/plax.git"
-		}
+  "name": "plax",
+  "description": "jQuery parallaxing plugin",
+  "version": "1.5.0",
+  "homepage": "http://www.cameronmcefee.com/plax",
+  "author": "Cameron McEfee",
+  "license": "MIT",
+  "main": "./js/plax.js",
+  "keywords": ["ender", "parallax", "jquery", "jquery-plugin"],
+  "ender": "noop",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/PreCogSecurity/plax.git"
+  },
+  "files": [
+    "js/plax.js",
+    "readme.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "test": "jest",
+    "lint": "eslint js/ test/",
+    "audit": "npm audit --audit-level=high"
+  },
+  "jest": {
+    "testEnvironment": "jsdom",
+    "collectCoverageFrom": [
+      "js/plax.js"
+    ]
+  },
+  "devDependencies": {
+    "eslint": "^8.57.0",
+    "jest": "^30.0.0",
+    "jest-environment-jsdom": "^30.0.0",
+    "jquery": "^3.7.1"
+  }
 }

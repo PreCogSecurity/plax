@@ -1,4 +1,4 @@
-/* Plax version 1.4.1 */
+/* Plax version 1.5.0 */
 
 /*
   Copyright (c) 2011 Cameron McEfee
@@ -29,14 +29,15 @@
       delay              = 1 / maxfps * 1000,
       lastRender         = new Date().getTime(),
       layers             = [],
-      plaxActivityTarget = {},
+      plaxActivityTarget = $(document.body),
+      plaxBoundTarget    = null,
+      plaxMotionHandler  = null,
       motionDegrees      = 30,
       motionMax          = 1,
       motionMin          = -1,
       motionStartX       = null,
       motionStartY       = null,
-      ignoreMoveable     = false,
-      options            = null;
+      ignoreMoveable     = false;
 
   var defaults = {
     useTransform : true
@@ -44,8 +45,8 @@
 
   // Public Methods
   $.fn.plaxify = function (params){
-    options = $.extend({}, defaults, params);
-    options.useTransform = (options.useTransform ? supports3dTransform() : false);
+    var opts = $.extend({}, defaults, params);
+    opts.useTransform = (opts.useTransform ? supports3dTransform() : false);
 
     return this.each(function () {
 
@@ -55,18 +56,25 @@
         "yRange": $(this).data('yrange') || 0,
         "zRange": $(this).data('zrange') || 0,
         "invert": $(this).data('invert') || false,
-        "background": $(this).data('background') || false
+        "background": $(this).data('background') || false,
+        "useTransform": opts.useTransform
       };
 
       for (var i=0;i<layers.length;i++){
         if (this === layers[i].obj.get(0)){
           layerExistsAt = i;
+          break;
         }
       }
 
-      for (var param in params) {
-        if (layer[param] == 0) {
-          layer[param] = params[param];
+      // Fill in any ranges the element did not provide via data attributes.
+      // Only own enumerable properties are considered so a polluted
+      // Object.prototype cannot inject keys into layer configuration.
+      if (params) {
+        for (var param in params) {
+          if (Object.prototype.hasOwnProperty.call(params, param) && layer[param] === 0) {
+            layer[param] = params[param];
+          }
         }
       }
 
@@ -76,14 +84,16 @@
       layer.obj    = $(this);
       if(layer.background) {
         // animate using the element's background
-        pos = (layer.obj.css('background-position') || "0px 0px").split(/ /);
+        var pos = (layer.obj.css('background-position') || "0px 0px").split(/ /);
         if(pos.length != 2) {
+          warnInvalidBackground(layer, 'background-position must contain two values (e.g. "0px 0px")');
           return;
         }
-        x = pos[0].match(/^((-?\d+)\s*px|0+\s*%|left)$/);
-        y = pos[1].match(/^((-?\d+)\s*px|0+\s*%|top)$/);
+        var x = pos[0].match(/^((-?\d+)\s*px|0+\s*%|left)$/);
+        var y = pos[1].match(/^((-?\d+)\s*px|0+\s*%|top)$/);
         if(!x || !y) {
           // no can-doesville, babydoll, we need pixels or top/left as initial values (it mightbe possible to construct a temporary image from the background-image property and get the dimensions and run some numbers, but that'll almost definitely be slow)
+          warnInvalidBackground(layer, 'background-position must use pixel values or top/left (got "' + layer.obj.css('background-position') + '")');
           return;
         }
         layer.originX = layer.startX = x[2] || 0;
@@ -99,7 +109,7 @@
             transformTranslate = get3dTranslation(layer.obj);
 
         layer.obj.css({
-          'transform' : transformTranslate.join() + 'px',
+          'transform' : 'translate3d(' + transformTranslate.join('px,') + 'px)',
           'top'   : position.top,
           'left'  : position.left,
           'right' :'',
@@ -128,6 +138,23 @@
     });
   };
 
+  // Surface invalid layer configuration instead of failing silently.
+  //
+  // The layer is left unregistered (a documented no-op) so the rest of the
+  // page keeps working, but the developer sees exactly why in the console.
+  //
+  // Parameters
+  //
+  //  layer  - the layer object being configured
+  //  reason - human readable description of the invalid configuration
+  //
+  // returns nothing
+  function warnInvalidBackground(layer, reason) {
+    if (typeof console !== 'undefined' && console.warn) {
+      console.warn('[plax] Layer skipped: ' + reason, layer.obj.get(0));
+    }
+  }
+
   // Get the translate position of the element
   //
   // return 3 element array for translate3d
@@ -139,8 +166,11 @@
                     obj.css("-o-transform")      ||
                     obj.css("transform");
 
-    if(matrix !== 'none') {
-      var values = matrix.split('(')[1].split(')')[0].split(',');
+    if(matrix && matrix !== 'none') {
+      var parts = matrix.split('(');
+      if (parts.length < 2) return translate;
+
+      var values = parts[1].split(')')[0].split(',');
       var x = 0,
           y = 0,
           z = 0;
@@ -166,23 +196,25 @@
   function inViewport(element) {
     if (element.offsetWidth === 0 || element.offsetHeight === 0) return false;
 
-	var height = document.documentElement.clientHeight,
-      rects  = element.getClientRects();
+    var height = document.documentElement.clientHeight,
+        rects  = element.getClientRects();
 
-	for (var i = 0, l = rects.length; i < l; i++) {
+    for (var i = 0, l = rects.length; i < l; i++) {
 
-    var r           = rects[i],
-        in_viewport = r.top > 0 ? r.top <= height : (r.bottom > 0 && r.bottom <= height);
+      var r           = rects[i],
+          in_viewport = r.top > 0 ? r.top <= height : (r.bottom > 0 && r.bottom <= height);
 
-    if (in_viewport) return true;
-	}
-	return false;
+      if (in_viewport) return true;
+    }
+    return false;
   }
 
   // Check support for 3dTransform
   //
   // Returns boolean
   function supports3dTransform() {
+    if (!document.body) return false;
+
     var el = document.createElement('p'),
         has3d,
         transforms = {
@@ -195,14 +227,17 @@
 
     document.body.insertBefore(el, null);
 
-    for (var t in transforms) {
-      if (el.style[t] !== undefined) {
-        el.style[t] = "translate3d(1px,1px,1px)";
-        has3d = window.getComputedStyle(el).getPropertyValue(transforms[t]);
+    try {
+      for (var t in transforms) {
+        if (el.style[t] !== undefined) {
+          el.style[t] = "translate3d(1px,1px,1px)";
+          has3d = window.getComputedStyle(el).getPropertyValue(transforms[t]);
+        }
       }
+    } finally {
+      document.body.removeChild(el);
     }
 
-    document.body.removeChild(el);
     return (has3d !== undefined && has3d.length > 0 && has3d !== "none");
   }
 
@@ -217,18 +252,18 @@
   //
   // Returns an object literal with x and y as options.
   function valuesFromMotion(e) {
-    x = e.gamma;
-    y = e.beta;
+    var x = e.gamma,
+        y = e.beta;
 
     // Swap x and y in Landscape orientation
-    if (Math.abs(window.orientation) === 90) {
+    if (typeof window.orientation === 'number' && Math.abs(window.orientation) === 90) {
       var a = x;
       x = y;
       y = a;
     }
 
     // Invert x and y in upsidedown orientations
-    if (window.orientation < 0) {
+    if (typeof window.orientation === 'number' && window.orientation < 0) {
       x = -x;
       y = -y;
     }
@@ -251,13 +286,18 @@
   //
   // returns nothing
   function plaxifier(e) {
+    if (layers.length === 0) return;
+
     if (new Date().getTime() < lastRender + delay) return;
       lastRender = new Date().getTime();
 
-    var leftOffset = (plaxActivityTarget.offset() != null) ? plaxActivityTarget.offset().left : 0,
-        topOffset  = (plaxActivityTarget.offset() != null) ? plaxActivityTarget.offset().top : 0,
-        x          = e.pageX-leftOffset,
-        y          = e.pageY-topOffset;
+    var targetOffset = plaxActivityTarget.offset(),
+        leftOffset  = (targetOffset != null) ? targetOffset.left : 0,
+        topOffset   = (targetOffset != null) ? targetOffset.top : 0,
+        x           = e.pageX-leftOffset,
+        y           = e.pageY-topOffset,
+        targetWidth  = plaxActivityTarget.width(),
+        targetHeight = plaxActivityTarget.height();
 
     if (!inViewport(layers[0].obj[0].parentNode)) return;
 
@@ -266,7 +306,7 @@
         ignoreMoveable = true;
         return;
       }
-      values = valuesFromMotion(e);
+      var values = valuesFromMotion(e);
 
       // Admittedly fuzzy measurements
       x = values.x / motionDegrees;
@@ -279,13 +319,13 @@
       y = (y + 1) / 2;
     }
 
-    var hRatio = x/((moveable() === true) ? motionMax : plaxActivityTarget.width()),
-        vRatio = y/((moveable() === true) ? motionMax : plaxActivityTarget.height()),
-        layer, i;
+    var hRatio = x/((moveable() === true) ? motionMax : (targetWidth > 0 ? targetWidth : 1)),
+        vRatio = y/((moveable() === true) ? motionMax : (targetHeight > 0 ? targetHeight : 1)),
+        layer, i, newX, newY, newZ;
 
     for (i = layers.length; i--;) {
       layer = layers[i];
-      if(options.useTransform && !layer.background){
+      if(layer.useTransform && !layer.background){
         newX = layer.transformStartX + layer.inversionFactor*(layer.xRange*hRatio);
         newY = layer.transformStartY + layer.inversionFactor*(layer.yRange*vRatio);
         newZ = layer.transformStartZ;
@@ -321,21 +361,34 @@
     //
     // returns nothing
     enable: function(opts){
-      if (opts) {
-        if (opts.activityTarget) plaxActivityTarget = opts.activityTarget || $(document.body);
-        if (typeof opts.gyroRange === 'number' && opts.gyroRange > 0) motionDegrees = opts.gyroRange;
+      if (opts && opts.activityTarget) {
+        plaxActivityTarget = $(opts.activityTarget);
       } else {
         plaxActivityTarget = $(document.body);
       }
-
-      plaxActivityTarget.bind('mousemove.plax', function (e) {
-        plaxifier(e);
-      });
-
-      if(moveable()){
-        window.ondeviceorientation = function(e){plaxifier(e);};
+      if (opts && typeof opts.gyroRange === 'number' && opts.gyroRange > 0) {
+        motionDegrees = opts.gyroRange;
       }
 
+      // Remove any handlers bound by a previous enable() so repeated calls
+      // do not stack duplicate mousemove listeners.
+      if (plaxBoundTarget) {
+        plaxBoundTarget.unbind('mousemove.plax');
+      }
+      plaxBoundTarget = plaxActivityTarget;
+      plaxActivityTarget.bind('mousemove.plax', plaxifier);
+
+      if(moveable()){
+        if (plaxMotionHandler) {
+          window.removeEventListener('deviceorientation', plaxMotionHandler);
+        }
+        plaxMotionHandler = function(e){plaxifier(e);};
+        window.addEventListener('deviceorientation', plaxMotionHandler);
+      }
+
+      // Recalibrate the motion baseline on every enable.
+      motionStartX = null;
+      motionStartY = null;
     },
 
     // Stop parallaxing
@@ -350,17 +403,23 @@
     //
     // returns nothing
     disable: function(opts){
-      $(document).unbind('mousemove.plax');
-      window.ondeviceorientation = undefined;
+      if (plaxBoundTarget) {
+        plaxBoundTarget.unbind('mousemove.plax');
+        plaxBoundTarget = null;
+      }
+      if (plaxMotionHandler) {
+        window.removeEventListener('deviceorientation', plaxMotionHandler);
+        plaxMotionHandler = null;
+      }
       if (opts && typeof opts.restorePositions === 'boolean' && opts.restorePositions) {
         for(var i = layers.length; i--;) {
-          layer = layers[i];
-          if(options.useTransform && !layer.background){
+          var layer = layers[i];
+          if(layer.useTransform && !layer.background){
             layer.obj
                 .css('transform', 'translate3d('+layer.transformOriginX+'px,'+layer.transformOriginY+'px,'+layer.transformOriginZ+'px)')
                 .css('top', layer.originY);
           }else{
-            if(layers[i].background) {
+            if(layer.background) {
               layer.obj.css('background-position', layer.originX+'px '+layer.originY+'px');
             } else {
               layer.obj
@@ -379,5 +438,5 @@
   }
 
 })(function () {
-  return typeof jQuery !== 'undefined' ? jQuery : ender;
+  return typeof jQuery !== 'undefined' ? jQuery : (typeof ender !== 'undefined' ? ender : undefined);
 }());
