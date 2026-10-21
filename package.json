@@ -6,7 +6,12 @@
   "author": "Cameron McEfee",
   "license": "MIT",
   "main": "./js/plax.js",
-  "keywords": ["ender", "parallax", "jquery", "jquery-plugin"],
+  "keywords": [
+    "ender",
+    "parallax",
+    "jquery",
+    "jquery-plugin"
+  ],
   "ender": "noop",
   "repository": {
     "type": "git",

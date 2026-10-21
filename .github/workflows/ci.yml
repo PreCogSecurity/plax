@@ -34,6 +34,10 @@ jobs:
 
       - name: Test
         run: npm test
+        # Coverage not run: Plax is a single-file IIFE loaded via new Function()
+        # in tests, which bypasses Jest's instrumentation. A build step would be
+        # needed for accurate coverage measurement, but Plax intentionally has
+        # no build step (drop-in browser script).
 
       - name: Audit dependencies
         run: npm audit --audit-level=high
