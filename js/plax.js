@@ -148,11 +148,13 @@
   //  layer  - the layer object being configured
   //  reason - human readable description of the invalid configuration
   //
-  // returns nothing
+  // returns { code: string, message: string } - structured error object
   function warnInvalidBackground(layer, reason) {
+    var err = { code: 'INVALID_BACKGROUND_POSITION', message: reason };
     if (typeof console !== 'undefined' && console.warn) {
       console.warn('[plax] Layer skipped: ' + reason, layer.obj.get(0));
     }
+    return err;
   }
 
   // Get the translate position of the element

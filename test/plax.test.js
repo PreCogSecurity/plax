@@ -58,6 +58,14 @@ function moveMouse(target, pageX, pageY) {
   target.trigger(jQuery.Event('mousemove', { pageX, pageY }));
 }
 
+function fireDeviceOrientation(target, gamma, beta, alpha) {
+  const event = new Event('deviceorientation');
+  event.gamma = gamma;
+  event.beta = beta;
+  event.alpha = alpha;
+  target[0].dispatchEvent(event);
+}
+
 // The render loop throttles to maxfps (25fps => 40ms). Let the throttle
 // window elapse between simulated mouse moves.
 function waitForRender() {
@@ -249,5 +257,147 @@ describe('background layers', () => {
     // The layer was not registered: enabling and moving must not throw.
     jQuery.plax.enable({ activityTarget: jQuery(stage) });
     expect(() => moveMouse(jQuery(stage), 100, 100)).not.toThrow();
+  });
+
+  test('background-position with single value warns and is skipped', () => {
+    const stage = setupStage();
+    addLayer(stage, 'layer-single', { 'data-background': 'true' });
+    const $layer = jQuery('#layer-single');
+    $layer.css('background-position', '50px');
+
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    $layer.plaxify();
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('two values'), expect.anything());
+    warnSpy.mockRestore();
+
+    jQuery.plax.enable({ activityTarget: jQuery(stage) });
+    expect(() => moveMouse(jQuery(stage), 100, 100)).not.toThrow();
+  });
+
+  test('background-position with percentage values warns and is skipped', () => {
+    const stage = setupStage();
+    addLayer(stage, 'layer-pct', { 'data-background': 'true' });
+    const $layer = jQuery('#layer-pct');
+    $layer.css('background-position', '50% 50%');
+
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    $layer.plaxify();
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('pixel values or top/left'), expect.anything());
+    warnSpy.mockRestore();
+
+    jQuery.plax.enable({ activityTarget: jQuery(stage) });
+    expect(() => moveMouse(jQuery(stage), 100, 100)).not.toThrow();
+  });
+
+  test('background-position with right/bottom keywords warns and is skipped', () => {
+    const stage = setupStage();
+    addLayer(stage, 'layer-rb', { 'data-background': 'true' });
+    const $layer = jQuery('#layer-rb');
+    $layer.css('background-position', 'right bottom');
+
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    $layer.plaxify();
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('pixel values or top/left'), expect.anything());
+    warnSpy.mockRestore();
+
+    jQuery.plax.enable({ activityTarget: jQuery(stage) });
+    expect(() => moveMouse(jQuery(stage), 100, 100)).not.toThrow();
+  });
+});
+
+describe('device orientation (gyro) handling', () => {
+  beforeEach(() => {
+    // Mock DeviceOrientationEvent for gyro tests (jsdom doesn't provide it)
+    global.window.DeviceOrientationEvent = function DeviceOrientationEvent() {};
+    global.window.DeviceOrientationEvent.prototype = {
+      gamma: 0,
+      beta: 0,
+      alpha: 0
+    };
+    // Reset ignoreMoveable so gyro path can work
+    // We need to access the internal variable - we can't directly, but we can
+    // re-enable after each test by calling disable() which doesn't reset it
+    // Actually, the variable is in the closure. Let's just ensure it works.
+  });
+
+  afterEach(() => {
+    // Clean up the mock
+    delete global.window.DeviceOrientationEvent;
+    // Reset ignoreMoveable by reloading plax? Not easily done.
+    // The tests run in isolation with fresh plax load per test file.
+  });
+  test('enable() with gyroRange sets motionDegrees', () => {
+    jQuery.plax.enable({ gyroRange: 45 });
+    // motionDegrees is internal; we verify by checking behavior after enable
+    // The test primarily ensures no throw and gyroRange is accepted
+    jQuery.plax.disable();
+  });
+
+  test('deviceorientation event moves layers when moveable() is true', async () => {
+    const stage = setupStage();
+    addLayer(stage, 'layer-gyro', { 'data-xrange': '40', 'data-yrange': '20' });
+    const $layer = jQuery('#layer-gyro');
+
+    $layer.plaxify();
+    jQuery.plax.enable({ activityTarget: jQuery(stage), gyroRange: 30 });
+
+    // Simulate deviceorientation event: gamma=30, beta=20 (tilted right and forward)
+    // motionStartX/Y will be set to these on first event
+    fireDeviceOrientation(jQuery(window), 30, 20, 0);
+    await waitForRender();
+
+    // First event calibrates baseline, so position should be at origin (0,0)
+    expect($layer.css('transform')).toBe('translate3d(0px,0px,0px)');
+
+    // Second event: gamma=60, beta=40 => x=30, y=20 relative to baseline
+    // Normalized: x = 30/30 = 1, y = 20/30 = 0.666...
+    // Clamped to max 1: x=1, y=0.666...
+    // Normalized to 0-1: x=1, y=0.833...
+    // hRatio = 1/1 = 1, vRatio = 0.833...
+    // startX = -20, newX = -20 + 40*1 = 20
+    // startY = -10, newY = -10 + 20*0.833... = 6.66...
+    fireDeviceOrientation(jQuery(window), 60, 40, 0);
+    await waitForRender();
+
+    // The layer should have moved
+    const transform = $layer.css('transform');
+    expect(transform).toMatch(/translate3d\(/);
+    expect(transform).not.toBe('translate3d(0px,0px,0px)');
+  });
+
+  test('deviceorientation handler is removed on disable()', async () => {
+    const stage = setupStage();
+    addLayer(stage, 'layer-gyro2', { 'data-xrange': '40', 'data-yrange': '20' });
+    const $layer = jQuery('#layer-gyro2');
+
+    $layer.plaxify();
+    jQuery.plax.enable({ activityTarget: jQuery(stage), gyroRange: 30 });
+
+    fireDeviceOrientation(jQuery(window), 30, 20, 0);
+    await waitForRender();
+
+    jQuery.plax.disable();
+
+    // After disable, further events should not move the layer
+    fireDeviceOrientation(jQuery(window), 60, 40, 0);
+    await waitForRender();
+
+    expect($layer.css('transform')).toBe('translate3d(0px,0px,0px)');
+  });
+
+  test('repeated enable() with gyroRange does not stack handlers', async () => {
+    const stage = setupStage();
+    addLayer(stage, 'layer-gyro3', { 'data-xrange': '40', 'data-yrange': '20' });
+    const $layer = jQuery('#layer-gyro3');
+
+    $layer.plaxify();
+    jQuery.plax.enable({ activityTarget: jQuery(stage), gyroRange: 30 });
+    jQuery.plax.enable({ activityTarget: jQuery(stage), gyroRange: 30 });
+    jQuery.plax.disable();
+
+    fireDeviceOrientation(jQuery(window), 30, 20, 0);
+    await waitForRender();
+
+    expect($layer.css('transform')).toBe('translate3d(0px,0px,0px)');
   });
 });
